@@ -1,0 +1,157 @@
+name: CrowdOps CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ========================================================
+  # JOB 1: SMART CONTRACTS (Compile, Lint & Hardhat Tests)
+  # ========================================================
+  contracts-ci:
+    name: Smart Contracts Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if Contracts configured
+        id: check_contracts
+        run: |
+          if [ -f "package.json" ] && ([ -f "hardhat.config.ts" ] || [ -f "hardhat.config.js" ]); then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No Hardhat contracts configuration found. Skipping contracts CI."
+          fi
+
+      - name: Setup Node.js (LTS v20)
+        if: steps.check_contracts.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Contracts Dependencies
+        if: steps.check_contracts.outputs.exists == 'true'
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Compile Smart Contracts
+        if: steps.check_contracts.outputs.exists == 'true'
+        run: npx hardhat compile
+
+      - name: Run Smart Contract Unit Tests
+        if: steps.check_contracts.outputs.exists == 'true'
+        run: npx hardhat test
+
+  # ========================================================
+  # JOB 2: PYTHON BACKEND (FastAPI / Web3.py Lint & Test)
+  # ========================================================
+  backend-ci:
+    name: Python Backend Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if Backend configured
+        id: check_backend
+        run: |
+          if [ -f "backend/requirements.txt" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "dir=backend" >> $GITHUB_OUTPUT
+          elif [ -f "requirements.txt" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "dir=." >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No Python requirements.txt found. Skipping backend CI."
+          fi
+
+      - name: Setup Python 3.11
+        if: steps.check_backend.outputs.exists == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python Dependencies
+        if: steps.check_backend.outputs.exists == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          pip install -r ${{ steps.check_backend.outputs.dir }}/requirements.txt
+
+      - name: Lint and Syntax Check
+        if: steps.check_backend.outputs.exists == 'true'
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 ${{ steps.check_backend.outputs.dir }} --count --select=E9,F63,F7,F82 --show-source --statistics
+          # Syntax verification of all python files
+          python -m compileall ${{ steps.check_backend.outputs.dir }}
+
+      - name: Run Backend Pytest (if tests exist)
+        if: steps.check_backend.outputs.exists == 'true'
+        run: |
+          if [ -d "${{ steps.check_backend.outputs.dir }}/tests" ] || [ -d "tests" ]; then
+            pytest
+          else
+            echo "ℹ️ No tests directory found, skipping pytest."
+          fi
+
+  # ========================================================
+  # JOB 3: FRONTEND (Next.js / Web3 DApp Build Check)
+  # ========================================================
+  frontend-ci:
+    name: Frontend DApp Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if Frontend configured
+        id: check_frontend
+        run: |
+          if [ -f "frontend/package.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No frontend/package.json found. Skipping frontend CI."
+          fi
+
+      - name: Setup Node.js (LTS v20)
+        if: steps.check_frontend.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Frontend Dependencies
+        if: steps.check_frontend.outputs.exists == 'true'
+        working-directory: frontend
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Run Frontend Build Check
+        if: steps.check_frontend.outputs.exists == 'true'
+        working-directory: frontend
+        run: |
+          if grep -q '"build":' package.json; then
+            npm run build
+          else
+            echo "ℹ️ No build script in frontend/package.json, skipping build."
+          fi

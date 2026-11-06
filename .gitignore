@@ -1,0 +1,74 @@
+# ==========================================
+# Dependencies & Package Managers
+# ==========================================
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# ==========================================
+# Hardhat & Smart Contracts Build Artifacts
+# ==========================================
+artifacts/
+cache/
+typechain/
+typechain-types/
+coverage/
+coverage.json
+
+# ==========================================
+# Environment Variables & Secrets (CRITICAL)
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# ==========================================
+# Next.js / Frontend
+# ==========================================
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# ==========================================
+# IDE & System Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

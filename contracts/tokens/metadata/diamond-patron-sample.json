@@ -1,0 +1,29 @@
+{
+  "name": "CrowdOps Diamond Patron #1",
+  "description": "Official VIP Patron Badge for CrowdOps Decentralized Crowdfunding supporters who contribute >= 1 ETH.",
+  "image": "ipfs://bafybeidiamondpatron3dbadgeplaceholder",
+  "external_url": "https://crowdops.example.org/patrons/1",
+  "attributes": [
+    {
+      "trait_type": "Tier",
+      "value": "Diamond VIP"
+    },
+    {
+      "trait_type": "Title",
+      "value": "Founding Diamond Patron"
+    },
+    {
+      "trait_type": "Badge Model",
+      "value": "3D Crystal Emblem"
+    },
+    {
+      "display_type": "date",
+      "trait_type": "Joined Date",
+      "value": 1794762000
+    },
+    {
+      "trait_type": "Minimum Contribution",
+      "value": "1 ETH"
+    }
+  ]
+}

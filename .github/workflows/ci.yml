@@ -86,12 +86,23 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Setup Node for backend blockchain integration tests
+        if: steps.check_backend.outputs.exists == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Hardhat test dependencies
+        if: steps.check_backend.outputs.exists == 'true'
+        run: npm ci
+
       - name: Install Python Dependencies
         if: steps.check_backend.outputs.exists == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install flake8 pytest
-          pip install -r ${{ steps.check_backend.outputs.dir }}/requirements.txt
+          pip install -r ${{ steps.check_backend.outputs.dir }}/requirements.lock
 
       - name: Lint and Syntax Check
         if: steps.check_backend.outputs.exists == 'true'
@@ -99,13 +110,13 @@ jobs:
           # Stop the build if there are Python syntax errors or undefined names
           flake8 ${{ steps.check_backend.outputs.dir }} --count --select=E9,F63,F7,F82 --show-source --statistics
           # Syntax verification of all python files
-          python -m compileall ${{ steps.check_backend.outputs.dir }}
+          python -m compileall -q backend/app backend/scripts backend/tests
 
       - name: Run Backend Pytest (if tests exist)
         if: steps.check_backend.outputs.exists == 'true'
         run: |
           if [ -d "${{ steps.check_backend.outputs.dir }}/tests" ] || [ -d "tests" ]; then
-            pytest
+            python -m pytest backend/tests -q
           else
             echo "ℹ️ No tests directory found, skipping pytest."
           fi

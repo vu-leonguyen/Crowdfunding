@@ -6,3 +6,6 @@ class UploadResponse(BaseModel):
     ipfs_uri: str
     gateway_url: str
     size: int
+    kind: str
+    encrypted: bool
+    mime_type: str

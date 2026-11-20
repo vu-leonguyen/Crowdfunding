@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-# TV3 cung cấp get_contract() trả về web3 Contract của CrowdOpsPlatform
+from app.core.errors import ServiceError
+
 from app.shared.contract_loader import get_contract
 
 from .dto.campaign_response_dto import CampaignResponseDto, CampaignStatsDto
@@ -17,7 +18,7 @@ def _call(fn, *args):
     try:
         return fn(*args)
     except CampaignNotFound:
-        raise HTTPException(404, "Campaign not found")
+        raise ServiceError(404, "campaign_not_found", "Campaign not found.") from None
 
 
 @router.get("", response_model=list[CampaignResponseDto])

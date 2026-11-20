@@ -82,36 +82,68 @@ Swagger có route `/docs`, OpenAPI ở `/openapi.json`. `/health` là liveness;
 | TOKEN_TIER_THRESHOLD | Mặc định 1000 CROPS, có thể điều chỉnh theo thống nhất nhóm |
 | ABI_DIR | Mặc định `backend/abis`, chứa ABI đã xuất từ Hardhat |
 
-| API | Chức năng |
+| Biến (bổ sung) | Ý nghĩa |
 | --- | --- |
-| POST /ipfs/proposal | Multipart `file`: PDF Proposal |
-| POST /ipfs/proof | Multipart `file`: PDF, PNG hoặc JPEG chứng từ |
-| GET /tokenomics/{address}/tier | Số dư CROPS/NFT và tier |
-| GET /health | Backend hoạt động |
-| GET /health/rpc | RPC kết nối được và đúng chain |
+| PLATFORM_ADDRESS | Địa chỉ CrowdOpsPlatform; bắt buộc cho `/campaigns`, `/auth/roles` và upload/tải file có kiểm quyền |
+| FILE_ENCRYPTION_KEY | Khóa AES-256 (base64, 32 byte) mã hóa file proof/exclusive. Mất khóa thì không đọc lại được file cũ |
+| MAX_MEDIA_BYTES | Mặc định 50 MiB cho ảnh/video và nội dung độc quyền |
+| AUTH_MAX_AGE_SECONDS | Thời hạn của chữ ký ví, mặc định 300 giây |
 
-Ví dụ upload sau khi cấu hình JWT:
+Tạo khóa mã hóa:
 
 ```bash
-curl --fail -F 'file=@proposal.pdf' http://127.0.0.1:8000/ipfs/proposal
+python -c "import base64,os;print(base64.b64encode(os.urandom(32)).decode())"
 ```
 
-Response gồm `cid`, `ipfs_uri`, `gateway_url`, `size`. Frontend chuyển `cid`
-vào `createCampaign(..., proposalCID, ...)` hoặc `requestSpending(..., proofCID)`.
-Upload không tự tạo campaign, không tự gửi transaction và không tự ghi CID lên chain.
-JWT chỉ được gửi tới `api.pinata.cloud`, không trả về client. Nếu cloud chặn mạng,
-cần cho phép `api.pinata.cloud`; gateway chỉ cần khi truy xuất nội dung.
+| API | Xác thực | Chức năng |
+| --- | --- | --- |
+| GET /auth/challenge?address= | – | Trả message để ví ký (personal_sign) |
+| GET /auth/roles?campaign_id= | Chữ ký ví | Role on-chain của ví và quyền upload/đọc từng loại file |
+| POST /ipfs/proposal | Chữ ký ví | Multipart `file`: PDF Proposal, lưu công khai |
+| POST /ipfs/media | Chữ ký ví | Multipart `file`: PNG/JPEG/GIF/WEBP/MP4/WEBM, lưu công khai |
+| POST /ipfs/metadata | Chữ ký ví | JSON body, lưu công khai (pinJSONToIPFS) |
+| POST /ipfs/proof | Creator | Multipart `file` + `campaign_id`: hóa đơn PDF/PNG/JPEG, **mã hóa** trước khi pin |
+| POST /ipfs/exclusive | Creator | Multipart `file` + `campaign_id`: nội dung độc quyền, **mã hóa** |
+| GET /ipfs/files/{cid} | Theo role | Tải và giải mã file proof/exclusive sau khi kiểm tra role |
+| GET /campaigns, /campaigns/{id}, /campaigns/{id}/stats | – | Danh sách, chi tiết, tiến độ gọi vốn |
+| GET /campaigns/{id}/requests | – | Spending request và % phiếu |
+| GET /tokenomics/{address}/tier | – | Số dư CROPS/NFT và tier |
+| GET /health, /health/rpc | – | Backend và RPC |
 
-Quy tắc tier hiện tại: có NFT → `diamond`; nếu không, CROPS >= ngưỡng →
-`governance`; còn lại → `basic`. Hai tier đầu có `has_exclusive_access=true`.
-Đây là chính sách backend có thể cấu hình, không thay đổi trọng số vote on-chain.
-API đọc địa chỉ công khai **không chứng minh người gọi sở hữu ví**. Muốn bảo vệ nội dung
-riêng tư cần xác thực ví bằng challenge/chữ ký và kiểm tra tier phía server.
+Response upload gồm `cid`, `ipfs_uri`, `gateway_url`, `size`, `kind`, `encrypted`, `mime_type`.
+Frontend chuyển `ipfs_uri` vào `createCampaign(..., proposalCID, ...)` hoặc
+`requestSpending(..., proofCID)`. Upload không tự gửi transaction.
 
-Endpoint upload đang phục vụ phát triển. Trước khi mở công khai, cần xác thực người
-upload, rate limit/quota và giới hạn request body ở reverse proxy để bảo vệ tài khoản
-Pinata. Kiểm tra magic bytes không thay thế quét nội dung độc hại. Không upload bí mật:
-IPFS là dữ liệu công khai và pin file không đảm bảo được lưu vĩnh viễn.
+## Xác thực ví và phân quyền (RBAC)
+
+**Xác thực.** Frontend gọi `GET /auth/challenge`, ký message bằng MetaMask
+(`personal_sign`), rồi gửi kèm 3 header trong mỗi request cần xác thực:
+`X-Wallet-Address`, `X-Wallet-Signature`, `X-Wallet-Issued-At`. Backend khôi phục
+địa chỉ từ chữ ký (EIP-191) và chỉ chấp nhận khi khớp địa chỉ, đúng `CHAIN_ID` và còn
+hạn. Server không giữ private key, mật khẩu hay session.
+
+**Role được đọc trực tiếp từ smart contract**, nên contract là nguồn sự thật duy nhất:
+
+| Role | Điều kiện on-chain |
+| --- | --- |
+| public | Mọi ví đã ký |
+| creator | `getCampaign(id).creator == ví` |
+| backer | `getContribution(id, ví) > 0` (hoàn tiền xong thì mất quyền) |
+| diamond | `DiamondPatronNFT.balanceOf(ví) > 0` |
+
+| Loại file | Lưu trữ | Ai upload | Ai đọc |
+| --- | --- | --- | --- |
+| proposal, media, metadata | Công khai | Ví đã ký | Mọi người (qua gateway, CID nằm trên chain) |
+| proof (hóa đơn) | AES-256-GCM | Creator | Creator hoặc backer của campaign |
+| exclusive | AES-256-GCM | Creator | Creator, hoặc backer đang giữ NFT Diamond |
+
+**Vì sao phải mã hóa.** Mọi file trên IPFS đều ai cũng tải được nếu biết CID, nên
+chặn ở API là chưa đủ. File proof/exclusive được mã hóa AES-256-GCM trước khi pin;
+header (loại file, campaign, chain, địa chỉ platform) được xác thực bằng GCM nên không
+thể sửa nhãn để vượt quyền. Chỉ backend giữ khóa và chỉ giải mã sau khi kiểm role.
+
+Giới hạn: khóa đặt ở server (mô hình tập trung, đủ cho đồ án). Kiểm tra magic bytes
+không thay thế quét mã độc; nên thêm rate limit trước khi mở công khai.
 
 ## Bàn giao tích hợp
 
@@ -144,7 +176,12 @@ Upload Pinata thật và số dư token/NFT đã deploy cần credentials/contra
 `requirements.lock` chốt cả dependencies trực tiếp/gián tiếp của môi trường đã kiểm tra;
 `requirements*.txt` thể hiện các dependency trực tiếp khi cập nhật sau này.
 
-Kết quả kiểm tra trong cloud workspace: **44 test backend đạt**, **15 test Hardhat
+Phase 1 (RBAC): `tests/test_rbac.py` kiểm tra chữ ký ví (giả mạo, hết hạn, sai chain),
+ma trận quyền, mã hóa/chống sửa header, upload/tải file theo role qua API, và
+`test_integration.py::test_rbac_roles_against_real_platform` đọc role từ CrowdOpsPlatform
+thật trên Hardhat (cần `npx hardhat compile` trước).
+
+Kết quả kiểm tra trước Phase 1 trong cloud workspace: **44 test backend đạt**, **15 test Hardhat
 hiện có đạt**, `pip check` không phát hiện dependency xung đột. Đã chạy Uvicorn,
 gọi `/health/rpc` nhận chain 31337, deploy CrowdOpsPlatform lên Hardhat cục bộ,
 nạp bằng ContractLoader và đọc thành công `campaignCounter()` / `owner()`.

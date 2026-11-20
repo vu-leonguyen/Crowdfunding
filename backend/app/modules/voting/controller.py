@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
+from app.core.errors import ServiceError
 
 from app.shared.contract_loader import get_contract
 
@@ -13,4 +15,4 @@ def list_requests(campaign_id: int, contract=Depends(get_contract)):
     try:
         return VotingService(contract).list_requests(campaign_id)
     except CampaignNotFound:
-        raise HTTPException(404, "Campaign not found")
+        raise ServiceError(404, "campaign_not_found", "Campaign not found.") from None

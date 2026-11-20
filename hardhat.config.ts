@@ -16,6 +16,19 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 31337,
     },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
+    },
+    ...(process.env.SEPOLIA_RPC_URL && process.env.DEPLOYER_PRIVATE_KEY
+      ? {
+          sepolia: {
+            url: process.env.SEPOLIA_RPC_URL,
+            accounts: [process.env.DEPLOYER_PRIVATE_KEY],
+            chainId: 11155111,
+          },
+        }
+      : {}),
   },
   paths: {
     sources: "./contracts",

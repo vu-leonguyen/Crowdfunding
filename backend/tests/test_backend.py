@@ -11,6 +11,7 @@ from app.modules.ipfs.service import IPFSService
 from app.modules.tokenomics.service import TokenomicsService
 from app.shared.contract_loader import ContractLoader
 from app.shared.web3_provider import Web3Provider
+from tests.wallets import CREATOR, signed_headers
 
 
 @pytest.fixture
@@ -29,9 +30,12 @@ def test_health_docs_and_cors(client):
 
 
 def test_upload_validation_and_missing_credentials(client):
-    assert client.post('/ipfs/proposal', files={'file': ('x.pdf', b'fake', 'application/pdf')}).status_code == 415
-    assert client.post('/ipfs/proof', files={'file': ('x', b'')}).status_code == 422
-    response = client.post('/ipfs/proposal', files={'file': ('x.pdf', b'%PDF-1.4 test')})
+    auth = signed_headers(CREATOR)
+    assert client.post('/ipfs/proposal', files={'file': ('x.pdf', b'fake', 'application/pdf')},
+                       headers=auth).status_code == 415
+    assert client.post('/ipfs/media', files={'file': ('x', b'')}, headers=auth).status_code == 422
+    assert client.post('/ipfs/proposal', files={'file': ('x.pdf', b'%PDF-1.4 test')}).status_code == 401
+    response = client.post('/ipfs/proposal', files={'file': ('x.pdf', b'%PDF-1.4 test')}, headers=auth)
     assert response.status_code == 503
     assert response.json()['error']['code'] == 'pinata_not_configured'
 

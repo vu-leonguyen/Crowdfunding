@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
+from fastapi import Depends
+from app.config import Settings, get_settings
 from app.core.errors import ServiceError
-from app.shared.web3_provider import Web3Provider
+from app.shared.web3_provider import Web3Provider, get_web3_provider
 
 
 class ContractLoader:
@@ -30,3 +32,9 @@ class ContractLoader:
             raise
         except Exception:
             raise ServiceError(502, "contract_unavailable", "Unable to load deployed contract.") from None
+
+
+def get_contract(settings: Settings = Depends(get_settings),
+                 provider: Web3Provider = Depends(get_web3_provider)):
+    """FastAPI dependency: the deployed CrowdOpsPlatform contract (PLATFORM_ADDRESS)."""
+    return ContractLoader(provider, settings.abi_dir).load("CrowdOpsPlatform", settings.platform_address)

@@ -4,3 +4,5 @@ pydantic-settings==2.9.1
 python-multipart==0.0.20
 httpx==0.28.1
 web3==7.11.0
+pycryptodome==3.24.1
+eth-account==0.14.0

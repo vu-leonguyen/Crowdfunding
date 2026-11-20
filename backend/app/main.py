@@ -8,6 +8,9 @@ from app.core.errors import ErrorResponse, ServiceError, service_error_handler, 
 from app.shared.web3_provider import Web3Provider, get_web3_provider
 from app.modules.ipfs.controller import router as ipfs_router
 from app.modules.tokenomics.controller import router as tokenomics_router
+from app.modules.auth.controller import router as auth_router
+from app.modules.campaign.controller import router as campaign_router
+from app.modules.voting.controller import router as voting_router
 
 
 @asynccontextmanager
@@ -19,13 +22,19 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="CrowdOps Backend", version="0.1.0", lifespan=lifespan,
-                  responses={status: {"model": ErrorResponse} for status in (413, 415, 422, 502, 503)})
+                  responses={status: {"model": ErrorResponse} for status in (401, 403, 404, 409, 413, 415, 422, 502, 503)})
     app.add_middleware(CORSMiddleware, allow_origins=get_settings().cors_origins,
-                       allow_credentials=False, allow_methods=["GET", "POST"], allow_headers=["Content-Type"])
+                       allow_credentials=False, allow_methods=["GET", "POST"],
+                       allow_headers=["Content-Type", "X-Wallet-Address", "X-Wallet-Signature",
+                                      "X-Wallet-Issued-At"],
+                       expose_headers=["Content-Disposition"])
     app.add_exception_handler(ServiceError, service_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(ipfs_router)
     app.include_router(tokenomics_router)
+    app.include_router(auth_router)
+    app.include_router(campaign_router)
+    app.include_router(voting_router)
 
     @app.get("/health", tags=["Health"])
     def health():

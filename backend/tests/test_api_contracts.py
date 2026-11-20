@@ -10,6 +10,7 @@ from app.main import create_app
 from app.modules.tokenomics.service import TokenomicsService
 from app.shared.contract_loader import ContractLoader
 from app.shared.web3_provider import Web3Provider, get_web3_provider
+from tests.wallets import CREATOR, signed_headers
 
 
 def test_settings_from_environment(monkeypatch):
@@ -29,9 +30,9 @@ def test_invalid_settings(values):
         Settings(**values)
 
 
-@pytest.mark.parametrize('route,payload', [('/ipfs/proposal', b'%PDF-1.4 content'),
-                                         ('/ipfs/proof', b'\x89PNG\r\n\x1a\ncontent')])
-def test_upload_api_complete_pipeline(route, payload):
+@pytest.mark.parametrize('route,payload,mime', [('/ipfs/proposal', b'%PDF-1.4 content', 'application/pdf'),
+                                              ('/ipfs/media', b'\x89PNG\r\n\x1a\ncontent', 'image/png')])
+def test_upload_api_complete_pipeline(route, payload, mime):
     application = create_app()
     application.dependency_overrides[get_settings] = lambda: Settings(pinata_jwt='test-only')
     cid = 'Qm' + 'a' * 44
@@ -43,16 +44,18 @@ def test_upload_api_complete_pipeline(route, payload):
     with TestClient(application) as client:
         with client.portal.wrap_async_context_manager(httpx.AsyncClient(transport=httpx.MockTransport(upstream))) as http:
             application.state.http_client = http
-            response = client.post(route, files={'file': ('../../untrusted', payload)})
+            response = client.post(route, files={'file': ('../../untrusted', payload)},
+                                   headers=signed_headers(CREATOR))
     assert response.status_code == 200
     assert response.json() == {'cid': cid, 'ipfs_uri': f'ipfs://{cid}',
-                              'gateway_url': f'https://gateway.pinata.cloud/ipfs/{cid}', 'size': len(payload)}
+                              'gateway_url': f'https://gateway.pinata.cloud/ipfs/{cid}', 'size': len(payload),
+                              'kind': route.rsplit('/', 1)[1], 'encrypted': False, 'mime_type': mime}
     assert 'test-only' not in response.text
 
 
 def test_missing_file_and_disallowed_cors():
     with TestClient(create_app()) as client:
-        response = client.post('/ipfs/proposal')
+        response = client.post('/ipfs/proposal', headers=signed_headers(CREATOR))
         assert response.status_code == 422
         assert response.json()['error']['code'] == 'validation_error'
         response = client.options('/ipfs/proposal', headers={

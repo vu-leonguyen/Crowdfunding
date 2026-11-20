@@ -18,7 +18,6 @@ contract CrowdOpsPlatform is ICrowdOps, ReentrancyGuard, Ownable {
     // ========================================================
 
     uint256 public constant MIN_DURATION = 1 minutes; // Flexible for local testing / production
-    uint256 public constant DIAMOND_TIER_THRESHOLD = 1 ether;
     uint256 public constant TOKEN_RATE = 1000; // 1 ETH = 1,000 $CROPS tokens
 
     // ========================================================
@@ -26,6 +25,9 @@ contract CrowdOpsPlatform is ICrowdOps, ReentrancyGuard, Ownable {
     // ========================================================
 
     uint256 public campaignCounter;
+    /// @notice Cumulative contribution (per campaign) needed to earn a Diamond Patron NFT.
+    /// @dev Owner-adjustable so testnet demos can use small faucet amounts.
+    uint256 public diamondTierThreshold = 1 ether;
     IGovernanceToken public governanceToken;
     IDiamondPatronNFT public diamondNFT;
 
@@ -96,6 +98,19 @@ contract CrowdOpsPlatform is ICrowdOps, ReentrancyGuard, Ownable {
     function setTokenContracts(address _governanceToken, address _diamondNFT) external onlyOwner {
         governanceToken = IGovernanceToken(_governanceToken);
         diamondNFT = IDiamondPatronNFT(_diamondNFT);
+    }
+
+    event DiamondTierThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
+    error InvalidThreshold();
+
+    /**
+     * @notice Update the contribution needed to earn a Diamond Patron NFT.
+     * @param newThreshold Threshold in Wei; must be greater than zero.
+     */
+    function setDiamondTierThreshold(uint256 newThreshold) external onlyOwner {
+        if (newThreshold == 0) revert InvalidThreshold();
+        emit DiamondTierThresholdUpdated(diamondTierThreshold, newThreshold);
+        diamondTierThreshold = newThreshold;
     }
 
     // ========================================================
@@ -188,7 +203,7 @@ contract CrowdOpsPlatform is ICrowdOps, ReentrancyGuard, Ownable {
         // Mint Diamond Patron NFT if contribution reaches threshold
         if (
             address(diamondNFT) != address(0) &&
-            c.contributions[msg.sender] >= DIAMOND_TIER_THRESHOLD &&
+            c.contributions[msg.sender] >= diamondTierThreshold &&
             diamondNFT.balanceOf(msg.sender) == 0
         ) {
             diamondNFT.mintDiamondBadge(msg.sender, c.proposalCID);

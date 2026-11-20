@@ -36,6 +36,16 @@ async function main() {
   await (await platform.setTokenContracts(cropsAddr, diamondAddr)).wait();
   console.log("All contracts linked successfully.");
 
+  // 4b. Diamond tier threshold: keep 1 ETH locally, use a faucet-friendly 0.01 ETH on public testnets.
+  //     Override with DIAMOND_TIER_THRESHOLD_ETH in .env.
+  const isLocal = network.name === "hardhat" || network.name === "localhost";
+  const thresholdEth = process.env.DIAMOND_TIER_THRESHOLD_ETH || (isLocal ? "1" : "0.01");
+  const threshold = ethers.parseEther(thresholdEth);
+  if (threshold !== (await platform.diamondTierThreshold())) {
+    await (await platform.setDiamondTierThreshold(threshold)).wait();
+  }
+  console.log(`Diamond tier threshold: ${thresholdEth} ETH`);
+
   // 5. Export ABIs and addresses for Frontend
   const frontendContractsDir = path.join(__dirname, "..", "frontend", "src", "contracts");
   fs.mkdirSync(frontendContractsDir, { recursive: true });
@@ -59,6 +69,8 @@ async function main() {
     CrowdOpsPlatform: platformAddr,
     GovernanceToken: cropsAddr,
     DiamondPatronNFT: diamondAddr,
+    deployer: deployer.address,
+    deployedAt: new Date().toISOString(),
   };
 
   fs.writeFileSync(addressesPath, JSON.stringify(existing, null, 2));

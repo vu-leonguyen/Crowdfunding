@@ -129,6 +129,11 @@
     },
     {
       "inputs": [],
+      "name": "InvalidThreshold",
+      "type": "error"
+    },
+    {
+      "inputs": [],
       "name": "NoContributionToRefund",
       "type": "error"
     },
@@ -295,6 +300,25 @@
         }
       ],
       "name": "CampaignStateChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "oldThreshold",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "newThreshold",
+          "type": "uint256"
+        }
+      ],
+      "name": "DiamondTierThresholdUpdated",
       "type": "event"
     },
     {
@@ -498,19 +522,6 @@
     },
     {
       "inputs": [],
-      "name": "DIAMOND_TIER_THRESHOLD",
-      "outputs": [
-        {
-          "internalType": "uint256",
-          "name": "",
-          "type": "uint256"
-        }
-      ],
-      "stateMutability": "view",
-      "type": "function"
-    },
-    {
-      "inputs": [],
       "name": "MIN_DURATION",
       "outputs": [
         {
@@ -631,6 +642,19 @@
           "internalType": "contract IDiamondPatronNFT",
           "name": "",
           "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "diamondTierThreshold",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
@@ -936,6 +960,19 @@
           "type": "uint256"
         }
       ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "newThreshold",
+          "type": "uint256"
+        }
+      ],
+      "name": "setDiamondTierThreshold",
+      "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
     },

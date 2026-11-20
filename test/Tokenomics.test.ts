@@ -165,6 +165,23 @@ describe("Tokenomics: GovernanceToken ($CROPS) & DiamondPatronNFT ($DIAMOND)", f
       expect(await diamond.ownerOf(1)).to.equal(backer1.address);
       expect(await diamond.ownerOf(2)).to.equal(backer2.address);
     });
+
+    it("should let the owner lower the Diamond threshold for testnet demos", async function () {
+      await expect(platform.connect(owner).setDiamondTierThreshold(ethers.parseEther("0.01")))
+        .to.emit(platform, "DiamondTierThresholdUpdated")
+        .withArgs(ethers.parseEther("1"), ethers.parseEther("0.01"));
+
+      await platform.connect(backer1).contribute(1, { value: ethers.parseEther("0.01") });
+      expect(await diamond.verifyDiamondPatron(backer1.address)).to.be.true;
+    });
+
+    it("should reject threshold updates from non-owners or to zero", async function () {
+      await expect(platform.connect(outsider).setDiamondTierThreshold(1))
+        .to.be.revertedWithCustomError(platform, "OwnableUnauthorizedAccount")
+        .withArgs(outsider.address);
+      await expect(platform.connect(owner).setDiamondTierThreshold(0))
+        .to.be.revertedWithCustomError(platform, "InvalidThreshold");
+    });
   });
 
   describe("4. Token Transfer & Verification (Criterion 4)", function () {

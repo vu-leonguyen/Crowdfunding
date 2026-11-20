@@ -9,7 +9,7 @@ import "./IDiamondPatronNFT.sol";
 
 /**
  * @title DiamondPatronNFT
- * @notice ERC-721 VIP Patron Badge ($DIAMOND) awarded to backers contributing >= 1 ETH.
+ * @notice ERC-721 VIP Patron Badge ($DIAMOND) awarded to backers whose contribution reaches the platform's diamondTierThreshold.
  * @dev Only the authorized CrowdOpsPlatform contract can mint Diamond Patron badges.
  */
 contract DiamondPatronNFT is ERC721URIStorage, Ownable, IDiamondPatronNFT {

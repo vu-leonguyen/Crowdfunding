@@ -77,6 +77,10 @@ export default function App() {
   const [decryptKey, setDecryptKey] = useState("");
   const [decryptedOutput, setDecryptedOutput] = useState("");
 
+  // UI view state
+  const [sidebarTab, setSidebarTab] = useState<"create" | "decrypt">("create");
+  const [campaignFilter, setCampaignFilter] = useState<"all" | "active" | "success" | "mine">("all");
+
   const loadData = useCallback(async (userAddr: string, currentChainId: number) => {
     const deployed = getAddressesForChain(currentChainId);
     setAddrs(deployed);
@@ -357,12 +361,34 @@ export default function App() {
     }
   };
 
+  const totalRaisedEth = campaigns.reduce(
+    (sum, item) => sum + Number(formatEther(item.totalFundsRaised)),
+    0
+  );
+
+  const filteredCampaigns = campaigns.filter((c) => {
+    if (campaignFilter === "active") return c.state === 0;
+    if (campaignFilter === "success") return c.state === 1 || c.state === 3 || c.state === 4;
+    if (campaignFilter === "mine") {
+      return (
+        c.creator.toLowerCase() === address.toLowerCase() || c.myContribution > 0n
+      );
+    }
+    return true;
+  });
+
+  const networkLabel =
+    chainId === 11155111 ? "Sepolia Testnet" : chainId === 31337 ? "Hardhat Local" : `Chain ${chainId}`;
+
   return (
     <div className="container">
       <header className="header">
-        <div>
-          <h1>CrowdOps DApp</h1>
-          <p className="subtitle">Decentralized Crowdfunding &amp; Milestone Governance</p>
+        <div className="brand">
+          <div className="brand-logo">CO</div>
+          <div>
+            <h1>CrowdOps DApp</h1>
+            <p className="subtitle">Decentralized Crowdfunding &amp; Milestone Governance</p>
+          </div>
         </div>
         {!address ? (
           <button className="btn primary" onClick={handleConnect}>
@@ -370,7 +396,7 @@ export default function App() {
           </button>
         ) : (
           <div className="wallet-bar">
-            <span className="pill">Chain: {chainId}</span>
+            <span className="pill">{networkLabel}</span>
             <span className="pill">
               {address.slice(0, 6)}...{address.slice(-4)}
             </span>
@@ -379,12 +405,52 @@ export default function App() {
             <span className={`pill ${isDiamondPatron ? "diamond" : ""}`}>
               {isDiamondPatron ? "💎 Diamond VIP" : "Standard Tier"}
             </span>
+            <button
+              className="btn"
+              type="button"
+              disabled={loading}
+              onClick={() => loadData(address, chainId)}
+              title="Làm mới dữ liệu on-chain"
+            >
+              ↻ Làm mới
+            </button>
           </div>
         )}
       </header>
 
       {statusMsg && <div className="alert success">{statusMsg}</div>}
       {errorMsg && <div className="alert error">{errorMsg}</div>}
+
+      {!address && (
+        <section className="hero">
+          <h2>Gọi vốn minh bạch bằng Smart Contract &amp; IPFS</h2>
+          <p>
+            Toàn bộ vốn đóng góp được khóa trong Escrow Vault on-chain và chỉ giải ngân từng
+            Milestone khi có trên 50% trọng số phiếu tán thành từ cộng đồng Backers.
+          </p>
+          <button className="btn primary lg" onClick={handleConnect}>
+            Kết nối MetaMask để bắt đầu
+          </button>
+          <div className="feature-grid">
+            <div className="feature-card">
+              <strong>1. Escrow &amp; Milestone Voting</strong>
+              <span>Khóa vốn an toàn với ReentrancyGuard và giải ngân theo biểu quyết &gt; 50%.</span>
+            </div>
+            <div className="feature-card">
+              <strong>2. Tokenomics ($CROPS &amp; NFT)</strong>
+              <span>Tự động nhận 1,000 $CROPS/ETH và huy hiệu Diamond Patron ERC-721.</span>
+            </div>
+            <div className="feature-card">
+              <strong>3. IPFS &amp; On-chain RBAC</strong>
+              <span>Lưu trữ PDF, Media, Metadata JSON trên Pinata với phân quyền theo vai trò ví.</span>
+            </div>
+            <div className="feature-card">
+              <strong>4. Mã hóa AES-256-GCM</strong>
+              <span>Bảo vệ dữ liệu nhạy cảm và chứng từ tài chính trước khi lưu trữ phi tập trung.</span>
+            </div>
+          </div>
+        </section>
+      )}
 
       {address && !addrs && (
         <div className="alert error">
@@ -394,10 +460,49 @@ export default function App() {
       )}
 
       {address && addrs && (
-        <div className="grid">
-          <section className="card">
-            <h2>1. Tạo Chiến Dịch Mới (On-Chain)</h2>
-            <form onSubmit={handleCreateCampaign} className="form">
+        <>
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">Tổng chiến dịch</div>
+              <div className="stat-value">{campaigns.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Tổng ETH đã gọi</div>
+              <div className="stat-value">{totalRaisedEth.toFixed(3)} ETH</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Số dư quản trị</div>
+              <div className="stat-value">{cropsBalance} $CROPS</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Hạng thành viên</div>
+              <div className="stat-value">{isDiamondPatron ? "💎 Diamond VIP" : "Standard"}</div>
+            </div>
+          </div>
+
+          <div className="grid">
+            <section className="card">
+              <div className="tabs">
+                <button
+                  type="button"
+                  className={`tab-btn ${sidebarTab === "create" ? "active" : ""}`}
+                  onClick={() => setSidebarTab("create")}
+                >
+                  + Tạo chiến dịch
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${sidebarTab === "decrypt" ? "active" : ""}`}
+                  onClick={() => setSidebarTab("decrypt")}
+                >
+                  🔐 Giải mã AES-256
+                </button>
+              </div>
+
+              {sidebarTab === "create" ? (
+                <>
+                  <h2>Tạo Chiến Dịch Mới (On-Chain)</h2>
+                  <form onSubmit={handleCreateCampaign} className="form">
               <input
                 placeholder="Tiêu đề chiến dịch"
                 value={title}
@@ -468,45 +573,96 @@ export default function App() {
                 {loading ? "Đang xử lý..." : "Tạo chiến dịch"}
               </button>
             </form>
-
-            <hr />
-            <h3>Giải mã thông tin AES-256-GCM</h3>
-            <div className="form">
-              <input
-                placeholder="Dán chuỗi AES256:..."
-                value={cipherInput}
-                onChange={(e) => setCipherInput(e.target.value)}
-              />
-              <input
-                type="password"
-                placeholder="Passphrase giải mã"
-                value={decryptKey}
-                onChange={(e) => setDecryptKey(e.target.value)}
-              />
-              <button className="btn" type="button" onClick={handleDecrypt}>
-                Giải mã
-              </button>
-              {decryptedOutput && <div className="pill">Kết quả: {decryptedOutput}</div>}
-            </div>
+                </>
+              ) : (
+                <>
+                  <h2>Giải mã thông tin AES-256-GCM</h2>
+                  <p className="meta">
+                    Dùng để giải mã thông tin liên hệ hoặc ghi chú nhạy cảm có tiền tố{" "}
+                    <code>AES256:...</code> do Creator đính kèm.
+                  </p>
+                  <div className="form">
+                    <textarea
+                      rows={3}
+                      placeholder="Dán chuỗi AES256:..."
+                      value={cipherInput}
+                      onChange={(e) => setCipherInput(e.target.value)}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Passphrase giải mã"
+                      value={decryptKey}
+                      onChange={(e) => setDecryptKey(e.target.value)}
+                    />
+                    <button className="btn primary" type="button" onClick={handleDecrypt}>
+                      Giải mã ngay
+                    </button>
+                    {decryptedOutput && (
+                      <div className="alert success small">Kết quả: {decryptedOutput}</div>
+                    )}
+                  </div>
+                </>
+              )}
           </section>
 
           <section className="card">
-            <h2>2. Danh Sách Chiến Dịch ({campaigns.length})</h2>
-            {campaigns.length === 0 && <p>Chưa có chiến dịch nào.</p>}
-            {campaigns.map((c) => {
+            <div className="row space-between">
+              <h2>Danh Sách Chiến Dịch ({filteredCampaigns.length})</h2>
+              <div className="tabs">
+                <button
+                  type="button"
+                  className={`tab-btn ${campaignFilter === "all" ? "active" : ""}`}
+                  onClick={() => setCampaignFilter("all")}
+                >
+                  Tất cả
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${campaignFilter === "active" ? "active" : ""}`}
+                  onClick={() => setCampaignFilter("active")}
+                >
+                  Đang gọi vốn
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${campaignFilter === "success" ? "active" : ""}`}
+                  onClick={() => setCampaignFilter("success")}
+                >
+                  Thành công / Vận hành
+                </button>
+                <button
+                  type="button"
+                  className={`tab-btn ${campaignFilter === "mine" ? "active" : ""}`}
+                  onClick={() => setCampaignFilter("mine")}
+                >
+                  Của tôi
+                </button>
+              </div>
+            </div>
+            {filteredCampaigns.length === 0 && (
+              <p className="meta">Không có chiến dịch nào khớp bộ lọc hiện tại.</p>
+            )}
+            {filteredCampaigns.map((c) => {
               const raised = Number(formatEther(c.totalFundsRaised));
               const goal = Number(formatEther(c.goal));
               const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
               const isCreator = c.creator.toLowerCase() === address.toLowerCase();
+              const deadlineStr = new Date(c.deadline * 1000).toLocaleString("vi-VN");
 
               return (
                 <div key={c.id} className="campaign-box">
                   <div className="row space-between">
-                    <strong>
+                    <strong className="campaign-title">
                       #{c.id} — {c.title}
                     </strong>
-                    <span className="pill">{CAMPAIGN_STATE_LABELS[c.state] ?? "Unknown"}</span>
+                    <span className={`state-badge state-${c.state}`}>
+                      {CAMPAIGN_STATE_LABELS[c.state] ?? "Unknown"}
+                    </span>
                   </div>
+                  <p className="meta">
+                    Creator: <code>{c.creator.slice(0, 6)}...{c.creator.slice(-4)}</code> | Hạn chót:{" "}
+                    {deadlineStr}
+                  </p>
                   <p className="desc">{c.description}</p>
                   <CampaignMediaView proposalCID={c.proposalCID} />
                   <p className="meta">
@@ -660,6 +816,7 @@ export default function App() {
             })}
           </section>
         </div>
+        </>
       )}
     </div>
   );

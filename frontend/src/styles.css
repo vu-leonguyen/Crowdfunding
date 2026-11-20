@@ -98,6 +98,7 @@ textarea {
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
@@ -208,7 +209,19 @@ textarea {
 }
 
 .file-field span {
-  color: #4b5563;
+  color: #cbd5e1;
+}
+
+.row .file-field {
+  flex: 1 1 240px;
+}
+
+a {
+  color: #7dd3fc;
+}
+
+a:hover {
+  color: #bae6fd;
 }
 
 .ipfs-media {
@@ -261,7 +274,7 @@ button.link {
   background: none;
   border: none;
   padding: 0;
-  color: #2563eb;
+  color: #7dd3fc;
   cursor: pointer;
   font: inherit;
 }

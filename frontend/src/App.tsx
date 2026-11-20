@@ -607,6 +607,7 @@ export default function App() {
                             <code>{r.recipient.slice(0, 8)}...</code>
                           </div>
                           <ProtectedFileViewer
+                            key={`${address}-${r.proofCID}`} /* reset decrypted view when the wallet changes */
                             uri={r.proofCID}
                             label="Xem hóa đơn / chứng từ (backer & creator)"
                             getSigner={getSigner}

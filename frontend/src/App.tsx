@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { formatEther, parseEther } from "ethers";
+import { formatEther, parseEther, Signer } from "ethers";
+import { CampaignMediaView, ProtectedFileViewer } from "./components/IpfsViewers";
+import { clearAuthSessions, uploadFile, uploadMetadata } from "./utils/api";
 import { decryptAES, encryptAES } from "./utils/crypto";
 import {
   CAMPAIGN_STATE_LABELS,
@@ -57,7 +59,9 @@ export default function App() {
   const [description, setDescription] = useState("");
   const [sensitiveNote, setSensitiveNote] = useState("");
   const [encryptKey, setEncryptKey] = useState("");
-  const [proposalCID, setProposalCID] = useState("");
+  const [proposalFile, setProposalFile] = useState<File | null>(null);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [formKey, setFormKey] = useState(0); // remount file inputs after submit
   const [goalEth, setGoalEth] = useState("1");
   const [durationMinutes, setDurationMinutes] = useState("60");
 
@@ -66,7 +70,7 @@ export default function App() {
   const [reqDesc, setReqDesc] = useState<Record<number, string>>({});
   const [reqAmount, setReqAmount] = useState<Record<number, string>>({});
   const [reqRecipient, setReqRecipient] = useState<Record<number, string>>({});
-  const [reqProofCID, setReqProofCID] = useState<Record<number, string>>({});
+  const [reqProofFile, setReqProofFile] = useState<Record<number, File | null>>({});
 
   // AES Decrypt helper state
   const [cipherInput, setCipherInput] = useState("");
@@ -134,6 +138,8 @@ export default function App() {
     setCampaigns(items.reverse());
   }, []);
 
+  const getSigner = async (): Promise<Signer> => (await connectWallet()).signer;
+
   const handleConnect = async () => {
     setErrorMsg("");
     setStatusMsg("");
@@ -151,6 +157,7 @@ export default function App() {
   useEffect(() => {
     if (!window.ethereum) return;
     const onAccountsChanged = () => {
+      clearAuthSessions();
       if (address) handleConnect();
     };
     const onChainChanged = () => {
@@ -180,12 +187,36 @@ export default function App() {
         finalDesc = `${finalDesc}\n[EncryptedContact]: ${encrypted}`;
       }
 
+      if (!proposalFile) throw new Error("Vui lòng chọn file Proposal (PDF).");
       const { signer } = await connectWallet();
+
+      // 1) Upload proposal PDF + media to IPFS (backend -> Pinata); wallet signs once.
+      setStatusMsg("Đang ký xác thực ví & upload Proposal PDF lên IPFS...");
+      const proposal = await uploadFile(signer, "proposal", proposalFile);
+      const media = [];
+      for (const [i, f] of mediaFiles.entries()) {
+        setStatusMsg(`Đang upload ảnh/video ${i + 1}/${mediaFiles.length} lên IPFS...`);
+        media.push(await uploadFile(signer, "media", f));
+      }
+      // 2) Metadata JSON (ERC-721 style) links everything; its CID is stored on-chain.
+      setStatusMsg("Đang upload metadata JSON lên IPFS...");
+      const metadata = await uploadMetadata(signer, {
+        name: title.trim(),
+        description: description.trim(),
+        proposal: proposal.ipfs_uri,
+        image: media.find((m) => m.mime_type.startsWith("image/"))?.ipfs_uri,
+        animation_url: media.find((m) => m.mime_type.startsWith("video/"))?.ipfs_uri,
+        media: media.map((m) => ({ uri: m.ipfs_uri, mime: m.mime_type })),
+        attributes: [{ trait_type: "Platform", value: "CrowdOps" }],
+      });
+
+      // 3) Create the campaign on-chain with the metadata CID.
       const { platform } = getContracts(signer, addrs);
+      setStatusMsg("Vui lòng xác nhận giao dịch createCampaign trên MetaMask...");
       const tx = await platform.createCampaign(
         title.trim(),
         finalDesc,
-        proposalCID.trim(),
+        metadata.ipfs_uri,
         parseEther(goalEth),
         BigInt(Number(durationMinutes) * 60)
       );
@@ -194,9 +225,11 @@ export default function App() {
       setTitle("");
       setDescription("");
       setSensitiveNote("");
-      setProposalCID("");
+      setProposalFile(null);
+      setMediaFiles([]);
+      setFormKey((k) => k + 1);
       await loadData(address, chainId);
-      setStatusMsg("Tạo chiến dịch on-chain thành công!");
+      setStatusMsg(`Tạo chiến dịch thành công! Metadata CID on-chain: ${metadata.ipfs_uri}`);
     } catch (err) {
       setErrorMsg(parseWeb3Error(err));
     } finally {
@@ -250,16 +283,22 @@ export default function App() {
     setErrorMsg("");
     setStatusMsg("");
     try {
+      const proofFile = reqProofFile[campaignId];
+      if (!proofFile) throw new Error("Vui lòng chọn file hóa đơn/chứng từ (PDF, PNG hoặc JPEG).");
       const { signer } = await connectWallet();
+      setStatusMsg("Đang ký xác thực ví & upload chứng từ (mã hóa AES-256-GCM) lên IPFS...");
+      const proof = await uploadFile(signer, "proof", proofFile, campaignId);
       const { platform } = getContracts(signer, addrs);
+      setStatusMsg("Vui lòng xác nhận giao dịch requestSpending trên MetaMask...");
       const tx = await platform.requestSpending(
         campaignId,
         reqDesc[campaignId] || "Milestone payment",
         parseEther(reqAmount[campaignId] || "0.5"),
         reqRecipient[campaignId] || address,
-        reqProofCID[campaignId] || "ipfs://bafybeiproof"
+        proof.ipfs_uri
       );
       await tx.wait();
+      setReqProofFile((prev) => ({ ...prev, [campaignId]: null }));
       await loadData(address, chainId);
       setStatusMsg(`Đã tạo đề xuất giải ngân cho chiến dịch #${campaignId}.`);
     } catch (err) {
@@ -349,8 +388,8 @@ export default function App() {
 
       {address && !addrs && (
         <div className="alert error">
-          Chưa tìm thấy địa chỉ contract cho Chain ID {chainId}. Vui lòng chuyển sang Hardhat Local
-          (31337) hoặc chạy <code>npx hardhat run scripts/deploy.ts</code> cho mạng này.
+          Chưa tìm thấy địa chỉ contract cho Chain ID {chainId}. Vui lòng chuyển MetaMask sang Sepolia
+          (11155111) hoặc Hardhat Local (31337), hoặc chạy <code>npm run deploy:local</code>.
         </div>
       )}
 
@@ -384,12 +423,28 @@ export default function App() {
                   onChange={(e) => setEncryptKey(e.target.value)}
                 />
               )}
-              <input
-                placeholder="Proposal IPFS CID (vd: ipfs://bafybei...)"
-                value={proposalCID}
-                onChange={(e) => setProposalCID(e.target.value)}
-                required
-              />
+              <label className="file-field" key={`proposal-${formKey}`}>
+                <span>Proposal / Whitepaper (PDF, bắt buộc)</span>
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setProposalFile(e.target.files?.[0] ?? null)}
+                  required
+                />
+              </label>
+              <label className="file-field" key={`media-${formKey}`}>
+                <span>Ảnh / Video minh họa (tùy chọn, chọn nhiều file)</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm"
+                  multiple
+                  onChange={(e) => setMediaFiles(Array.from(e.target.files ?? []))}
+                />
+              </label>
+              <p className="meta">
+                File được upload lên IPFS; CID của metadata JSON (trỏ tới PDF + ảnh/video) được lưu
+                vào smart contract để ai cũng truy xuất được bản gốc.
+              </p>
               <div className="row">
                 <input
                   type="number"
@@ -453,8 +508,9 @@ export default function App() {
                     <span className="pill">{CAMPAIGN_STATE_LABELS[c.state] ?? "Unknown"}</span>
                   </div>
                   <p className="desc">{c.description}</p>
+                  <CampaignMediaView proposalCID={c.proposalCID} />
                   <p className="meta">
-                    Proposal: <code>{c.proposalCID}</code> | Tiến độ: {raised} / {goal} ETH ({pct}%) |
+                    Tiến độ: {raised} / {goal} ETH ({pct}%) |
                     Còn lại: {formatEther(c.remainingFunds)} ETH | Bạn đã góp:{" "}
                     {formatEther(c.myContribution)} ETH
                   </p>
@@ -520,13 +576,16 @@ export default function App() {
                             setReqRecipient((prev) => ({ ...prev, [c.id]: e.target.value }))
                           }
                         />
-                        <input
-                          placeholder="Proof CID"
-                          value={reqProofCID[c.id] ?? ""}
-                          onChange={(e) =>
-                            setReqProofCID((prev) => ({ ...prev, [c.id]: e.target.value }))
-                          }
-                        />
+                        <label className="file-field" key={`proof-${c.id}-${c.requestCount}`}>
+                          <span>Hóa đơn / chứng từ (PDF, PNG, JPEG — mã hóa, chỉ backer xem)</span>
+                          <input
+                            type="file"
+                            accept="application/pdf,image/png,image/jpeg"
+                            onChange={(e) =>
+                              setReqProofFile((prev) => ({ ...prev, [c.id]: e.target.files?.[0] ?? null }))
+                            }
+                          />
+                        </label>
                         <button
                           className="btn primary"
                           disabled={loading}
@@ -545,8 +604,16 @@ export default function App() {
                         <div key={r.id} className="request-item">
                           <div>
                             #{r.id}: {r.description} — {formatEther(r.amount)} ETH →{" "}
-                            <code>{r.recipient.slice(0, 8)}...</code> | Proof:{" "}
-                            <code>{r.proofCID}</code>
+                            <code>{r.recipient.slice(0, 8)}...</code>
+                          </div>
+                          <ProtectedFileViewer
+                            key={`${address}-${r.proofCID}`} /* reset decrypted view when the wallet changes */
+                            uri={r.proofCID}
+                            label="Xem hóa đơn / chứng từ (backer & creator)"
+                            getSigner={getSigner}
+                          />
+                          <div className="meta">
+                            Proof CID: <code>{r.proofCID}</code>
                           </div>
                           <div className="meta">
                             Approve: {formatEther(r.approvalWeight)} ETH | Reject:{" "}

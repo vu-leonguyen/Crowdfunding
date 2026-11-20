@@ -127,3 +127,42 @@ def test_loader_rejects_real_account_without_code(local_chain):
     with pytest.raises(ServiceError) as error:
         ContractLoader(provider, settings.abi_dir).load('IGovernanceToken', provider.web3.eth.accounts[0])
     assert error.value.code == 'contract_not_deployed'
+
+
+ARTIFACTS = ROOT / 'artifacts' / 'contracts'
+
+
+@pytest.mark.skipif(not (ARTIFACTS / 'core' / 'CrowdOpsPlatform.sol').exists(),
+                    reason='Run `npx hardhat compile` first to build contract artifacts.')
+def test_rbac_roles_against_real_platform(local_chain):
+    """Roles are read from the real CrowdOpsPlatform + DiamondPatronNFT contracts."""
+    from app.modules.auth.service import AccessService, Role
+    settings, provider = local_chain
+    w3 = provider.web3
+    owner, creator, whale, small, outsider = w3.eth.accounts[:5]
+
+    def deploy(path):
+        artifact = json.loads((ARTIFACTS / path).read_text())
+        factory = w3.eth.contract(abi=artifact['abi'], bytecode=artifact['bytecode'])
+        receipt = w3.eth.wait_for_transaction_receipt(factory.constructor().transact({'from': owner}))
+        return w3.eth.contract(address=receipt.contractAddress, abi=artifact['abi'])
+
+    def send(call, sender, value=0):
+        receipt = w3.eth.wait_for_transaction_receipt(call.transact({'from': sender, 'value': value}))
+        assert receipt.status == 1
+
+    platform = deploy('core/CrowdOpsPlatform.sol/CrowdOpsPlatform.json')
+    token = deploy('tokens/GovernanceToken.sol/GovernanceToken.json')
+    nft = deploy('tokens/DiamondPatronNFT.sol/DiamondPatronNFT.json')
+    send(token.functions.setPlatformContract(platform.address), owner)
+    send(nft.functions.setPlatformContract(platform.address), owner)
+    send(platform.functions.setTokenContracts(token.address, nft.address), owner)
+    send(platform.functions.createCampaign('Solar', 'd', 'ipfs://proposal', 10**19, 3600), creator)
+    send(platform.functions.contribute(1), whale, value=10**18)       # reaches Diamond tier
+    send(platform.functions.contribute(1), small, value=10**17)
+
+    access = AccessService(platform, ContractLoader(provider, settings.abi_dir))
+    assert access.roles(creator, 1) == {Role.PUBLIC, Role.CREATOR}
+    assert access.roles(whale, 1) == {Role.PUBLIC, Role.BACKER, Role.DIAMOND}
+    assert access.roles(small, 1) == {Role.PUBLIC, Role.BACKER}
+    assert access.roles(outsider, 1) == {Role.PUBLIC}
